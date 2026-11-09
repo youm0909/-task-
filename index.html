@@ -1,4 +1,31 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>残り時間タスク</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
+<script>
+  window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || {
+    url: "https://dtrzvzfczfixmsbsociy.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cnp2emZjemZpeG1zYnNvY2l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5MzMzNjgsImV4cCI6MjEwOTUwOTM2OH0.kfuFIIpqUghjePN1bSUD6a96kJYj_hAdurPSmVoMhGY"
+  };
+</script>
+<style>
+:root {
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+body { margin: 0; padding: 0; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: #000; }
+img { max-width: 100%; }
+[hidden]:not([hidden=until-found i]) { display: none !important; }
 /* Auth & Share Toolbar */
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); font-size: 13px; margin-bottom: 8px; }
 .topbar-left { display: flex; align-items: center; gap: 10px; }
@@ -25,14 +52,9 @@
 .code-display { font-family: var(--font-num); font-size: 26px; font-weight: 700; letter-spacing: 0.18em; text-align: center; padding: 14px; background: var(--bg); border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent); user-select: all; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
-</style></head><body>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="./config.js"></script>
-<meta name="claude:viewport-fit-sides" content="cover">
-<title>残り時間タスク</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+</style>
+</head>
+<body>
 <style>
 /* Layout: 1 column list. Each task is a row whose bar drains left as the deadline nears (full = 7 days (168h), empty = 0h). */
 :root {
@@ -627,20 +649,25 @@ footer { font-size: 12.5px; color: var(--ink-2); }
   var currentUser = null;
   var realtimeChannel = null;
 
+  var DEFAULT_SUPABASE_URL = "https://dtrzvzfczfixmsbsociy.supabase.co";
+  var DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cnp2emZjemZpeG1zYnNvY2l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5MzMzNjgsImV4cCI6MjEwOTUwOTM2OH0.kfuFIIpqUghjePN1bSUD6a96kJYj_hAdurPSmVoMhGY";
+
   function getSupabaseConfig() {
     var stored = null;
     try { stored = JSON.parse(localStorage.getItem("nokori_supabase_config") || "null"); } catch (e) {}
     var winCfg = window.SUPABASE_CONFIG || {};
-    var url = (winCfg.url && winCfg.url.trim()) || (stored && stored.url) || "";
-    var anonKey = (winCfg.anonKey && winCfg.anonKey.trim()) || (stored && stored.anonKey) || "";
+    var url = (stored && stored.url && stored.url.trim()) || (winCfg.url && winCfg.url.trim()) || DEFAULT_SUPABASE_URL;
+    var anonKey = (stored && stored.anonKey && stored.anonKey.trim()) || (winCfg.anonKey && winCfg.anonKey.trim()) || DEFAULT_SUPABASE_ANON_KEY;
     return { url: url, anonKey: anonKey };
   }
 
   function initSupabase() {
     var cfg = getSupabaseConfig();
-    if (cfg.url && cfg.anonKey && window.supabase && window.supabase.createClient) {
+    var sbLib = window.supabase || (typeof supabase !== "undefined" ? supabase : null);
+    if (!sbLib && window.createClient) sbLib = window;
+    if (cfg.url && cfg.anonKey && sbLib && sbLib.createClient) {
       try {
-        supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+        supabaseClient = sbLib.createClient(cfg.url, cfg.anonKey);
         return true;
       } catch (e) {
         console.error("Supabase init error:", e);
