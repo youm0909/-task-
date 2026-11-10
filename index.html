@@ -8,6 +8,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Fallback if jsdelivr fails
+  if (!window.supabase) {
+    document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');
+  }
+</script>
 <script src="./config.js"></script>
 <script>
   window.SUPABASE_CONFIG = window.SUPABASE_CONFIG || {
@@ -651,29 +657,62 @@ footer { font-size: 12.5px; color: var(--ink-2); }
 
   var DEFAULT_SUPABASE_URL = "https://dtrzvzfczfixmsbsociy.supabase.co";
   var DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cnp2emZjemZpeG1zYnNvY2l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5MzMzNjgsImV4cCI6MjEwOTUwOTM2OH0.kfuFIIpqUghjePN1bSUD6a96kJYj_hAdurPSmVoMhGY";
+  var supabaseInitErrorMsg = "";
 
   function getSupabaseConfig() {
+    // Always use the hardcoded verified working credentials by default.
+    // If user explicitly configured in localStorage, check if it's valid, otherwise purge corrupted storage.
     var stored = null;
-    try { stored = JSON.parse(localStorage.getItem("nokori_supabase_config") || "null"); } catch (e) {}
+    try {
+      stored = JSON.parse(localStorage.getItem("nokori_supabase_config") || "null");
+      // If stored key is clearly invalid or truncated, clear it
+      if (stored && (!stored.anonKey || stored.anonKey.length < 50 || !stored.url)) {
+        localStorage.removeItem("nokori_supabase_config");
+        stored = null;
+      }
+    } catch (e) {
+      localStorage.removeItem("nokori_supabase_config");
+      stored = null;
+    }
     var winCfg = window.SUPABASE_CONFIG || {};
-    var url = (stored && stored.url && stored.url.trim()) || (winCfg.url && winCfg.url.trim()) || DEFAULT_SUPABASE_URL;
-    var anonKey = (stored && stored.anonKey && stored.anonKey.trim()) || (winCfg.anonKey && winCfg.anonKey.trim()) || DEFAULT_SUPABASE_ANON_KEY;
+    var url = DEFAULT_SUPABASE_URL;
+    var anonKey = DEFAULT_SUPABASE_ANON_KEY;
+    if (stored && stored.url && stored.anonKey && stored.anonKey.length > 50) {
+      url = stored.url.trim();
+      anonKey = stored.anonKey.trim();
+    } else if (winCfg.url && winCfg.anonKey && winCfg.anonKey.trim().length > 50) {
+      url = winCfg.url.trim();
+      anonKey = winCfg.anonKey.trim();
+    }
     return { url: url, anonKey: anonKey };
   }
 
   function initSupabase() {
+    supabaseInitErrorMsg = "";
     var cfg = getSupabaseConfig();
     var sbLib = window.supabase || (typeof supabase !== "undefined" ? supabase : null);
     if (!sbLib && window.createClient) sbLib = window;
-    if (cfg.url && cfg.anonKey && sbLib && sbLib.createClient) {
-      try {
-        supabaseClient = sbLib.createClient(cfg.url, cfg.anonKey);
-        return true;
-      } catch (e) {
-        console.error("Supabase init error:", e);
-      }
+
+    if (!sbLib || !sbLib.createClient) {
+      supabaseInitErrorMsg = "Supabase ライブラリの読み込みに失敗しました。アドブロック等を一時無効にするか、ブラウザを再読み込みしてください。";
+      console.error(supabaseInitErrorMsg);
+      return false;
     }
-    return false;
+
+    try {
+      supabaseClient = sbLib.createClient(cfg.url, cfg.anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      return true;
+    } catch (e) {
+      supabaseInitErrorMsg = "初期化例外エラー: " + (e.message || e);
+      console.error("Supabase init error:", e);
+      return false;
+    }
   }
 
   function lsLoad() {
@@ -1959,7 +1998,8 @@ footer { font-size: 12.5px; color: var(--ink-2); }
 
   function openAuthModal(mode) {
     if (!supabaseClient) {
-      openConfigModal("先に Supabase の接続設定（Project URL と anon key）を行ってください。");
+      var errText = supabaseInitErrorMsg || "Supabase への接続に失敗しました。Project URL と anon key をご確認ください。";
+      openConfigModal(errText);
       return;
     }
     authMode = mode || "login";
@@ -2094,6 +2134,16 @@ footer { font-size: 12.5px; color: var(--ink-2); }
     $("cfgMsg").className = "modal-msg";
     $("configModal").hidden = false;
     $("cfgUrl").focus();
+  }
+  var btnReset = $("btnResetConfig");
+  if (btnReset) {
+    btnReset.addEventListener("click", function () {
+      localStorage.removeItem("nokori_supabase_config");
+      $("cfgUrl").value = DEFAULT_SUPABASE_URL;
+      $("cfgKey").value = DEFAULT_SUPABASE_ANON_KEY;
+      say("初期設定に戻しました。再読み込みします…", true);
+      setTimeout(function () { location.reload(); }, 300);
+    });
   }
   $("btnOpenConfig").addEventListener("click", function () { openConfigModal(); });
   $("btnOpenConfigLogged").addEventListener("click", function () { openConfigModal(); });
@@ -2312,7 +2362,8 @@ footer { font-size: 12.5px; color: var(--ink-2); }
       <p class="modal-msg" id="cfgMsg"></p>
       <div class="modal-actions">
         <button type="button" class="btn" id="cfgCancel">キャンセル</button>
-        <button type="button" class="btn" id="btnTestNotify" style="margin-right:auto;">🔔 テスト通知</button>
+        <button type="button" class="btn" id="btnResetConfig" style="margin-right:auto;color:var(--urgent);">初期設定に復元</button>
+        <button type="button" class="btn" id="btnTestNotify">🔔 テスト通知</button>
         <button type="submit" class="btn primary" id="cfgSave">保存して接続</button>
       </div>
     </form>
